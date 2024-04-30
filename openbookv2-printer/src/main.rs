@@ -1,0 +1,87 @@
+use std::os::unix::raw::off_t;
+use std::str::FromStr;
+
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
+use anchor_lang::__private::base64;
+use clap::Parser;
+use log::{debug, error, info, LevelFilter};
+use serde::Serialize;
+use serde_json;
+use solana_account_decoder::UiAccountEncoding;
+use solana_client::rpc_client::RpcClient;
+use solana_client::pubsub_client::PubsubClient;
+use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionLogsConfig, RpcTransactionLogsFilter};
+use solana_client::rpc_filter::{Memcmp, RpcFilterType};
+use solana_program::pubkey::Pubkey;
+use openbookv2_generated::id;
+use openbookv2_generated::state::Market;
+use openbookv2_generated::FillEvent;
+use crate::constants::OPENBOOK_V2;
+use crate::logs::{FillLog, Trade};
+use crate::name::parse_name;
+use crate::utils::{price_lots_to_ui, to_native, to_ui_decimals};
+
+pub mod constants;
+mod name;
+mod market;
+mod logs;
+mod utils;
+
+#[derive(Parser)]
+struct Cli {
+    #[arg(short,long, default_value = "https://api.mainnet-beta.solana.com")]
+    rpc_url: String,
+    #[arg(short,long, default_value = "CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3")] // SOL-USDC market default
+    market: String,
+    #[arg(short, long, action)]
+    debug: bool,
+
+}
+
+fn main() {
+    let cli = Cli::parse();
+    if cli.debug {
+        env_logger::builder().filter_level(LevelFilter::Debug).init();
+    } else {
+        env_logger::builder().filter_level(LevelFilter::Info).init();
+    }
+    let client = RpcClient::new(&cli.rpc_url);
+    let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
+    let market = Market::deserialize(&mut &market_data[8..]).unwrap();
+    let market_name = parse_name(&market.name);
+    debug!("Market: {}", market_name.clone());
+    let wss_url = cli.rpc_url.replace("https://", "wss://");
+    let (subscription, receiver) = PubsubClient::logs_subscribe(&wss_url,
+       RpcTransactionLogsFilter::Mentions(vec![market.event_heap.to_string()]),
+        RpcTransactionLogsConfig{ commitment: None }
+    ).unwrap();
+    let discriminator = FillLog::discriminator();
+    loop {
+                match receiver.recv() {
+                    Ok(response) => {
+                        // remove logs if contains
+                        let any = response.value.logs.iter().any(|x|x.contains("error"));
+                        if any {
+                            continue;
+                        }
+                        for log in &response.value.logs{
+                            if log.contains("Program data: ") {
+                                let data = log.replace("Program data: ", "");
+                                let data = base64::decode(data).unwrap();
+                                if discriminator == data.as_slice()[..8] {
+                                    let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+                                    let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
+                                    let t = serde_json::to_string(&trade).unwrap();
+                                    info!("{:?}, signature: {}", t, response.value.signature);
+                                }
+                            }
+                            // println!("{}", log);
+                        }
+                    }
+                    Err(e) => {
+                        error!("account subscription error: {:?}", e);
+                        break;
+                    }
+                }
+    }
+}
