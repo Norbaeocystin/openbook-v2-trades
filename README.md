@@ -1,4 +1,6 @@
 
+Branch where data will be send to zeromq - control with arguments --port-zeromq --server-zeromq
+
 Fetching trades data for openbook v2 using websocket. This is just proof of concept. Use on your own risk!.
 Websocket can be and will be instable
 

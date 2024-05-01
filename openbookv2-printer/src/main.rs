@@ -19,6 +19,7 @@ use solana_program::pubkey::Pubkey;
 use openbookv2_generated::id;
 use openbookv2_generated::state::Market;
 use openbookv2_generated::FillEvent;
+use zmq;
 use crate::constants::OPENBOOK_V2;
 use crate::logs::{FillLog, Trade};
 use crate::name::parse_name;
@@ -38,7 +39,10 @@ struct Cli {
     market: String,
     #[arg(short, long, action)]
     debug: bool,
-
+    #[arg(short,long, default_value = "5555")]
+    port_zeromq: String,
+    #[arg(short,long, default_value = "127.0.0.1")]
+    server_zeromq: String,
 }
 
 fn main() {
@@ -61,6 +65,10 @@ fn main() {
     let discriminator = FillLog::discriminator();
     let (tx_sender, tx_receiver):(Sender<(FillLog,String)>, Receiver<(FillLog,String)>) = unbounded();
     spawn(move || {
+        let mut ctx = zmq::Context::new();
+        let zero_url = format!("tcp://{}:{}", cli.server_zeromq, cli.port_zeromq);
+        let socket = ctx.socket(zmq::REQ).unwrap();
+        socket.connect(&zero_url).unwrap();
         let mut ooa2owner = BTreeMap::new();
         let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
         let market = Market::deserialize(&mut &market_data[8..]).unwrap();
@@ -89,6 +97,7 @@ fn main() {
                 }
                 let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
                 let t = serde_json::to_string(&trade).unwrap();
+                socket.send(&t, 0);
                 info!("{:?}, signature: {}", t, tx_hash);
             }
         }
