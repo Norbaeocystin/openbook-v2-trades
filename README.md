@@ -8,6 +8,11 @@ cargo run --bin openbookv2-printer -- --rpc-url <YourRPC> --market <Pubkey of ma
 ```
 or you can build with cargo build --release
 
+### if you want to print all openbook markets:
+```
+cargo run --example market -- --rpc-url <YourRPCWhereYouCanMakeGPACalls>
+```
+
 #### TODO
  - [ ] option to use polling via getBlock rpc call ...
  - [ ] store data in db (redis,mongodb)
