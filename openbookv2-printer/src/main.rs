@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
 use std::os::unix::raw::off_t;
 use std::str::FromStr;
+use std::thread::spawn;
 
 use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
 use anchor_lang::__private::base64;
 use clap::Parser;
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use log::{debug, error, info, LevelFilter};
 use serde::Serialize;
 use serde_json;
@@ -19,7 +22,7 @@ use openbookv2_generated::FillEvent;
 use crate::constants::OPENBOOK_V2;
 use crate::logs::{FillLog, Trade};
 use crate::name::parse_name;
-use crate::utils::{price_lots_to_ui, to_native, to_ui_decimals};
+use crate::utils::{get_owner_account_for_ooa, price_lots_to_ui, to_native, to_ui_decimals};
 
 pub mod constants;
 mod name;
@@ -56,32 +59,66 @@ fn main() {
         RpcTransactionLogsConfig{ commitment: None }
     ).unwrap();
     let discriminator = FillLog::discriminator();
-    loop {
-                match receiver.recv() {
-                    Ok(response) => {
-                        // remove logs if contains
-                        let any = response.value.logs.iter().any(|x|x.contains("error"));
-                        if any {
-                            continue;
-                        }
-                        for log in &response.value.logs{
-                            if log.contains("Program data: ") {
-                                let data = log.replace("Program data: ", "");
-                                let data = base64::decode(data).unwrap();
-                                if discriminator == data.as_slice()[..8] {
-                                    let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                                    let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
-                                    let t = serde_json::to_string(&trade).unwrap();
-                                    info!("{:?}, signature: {}", t, response.value.signature);
-                                }
-                            }
-                            // println!("{}", log);
-                        }
+    let (tx_sender, tx_receiver):(Sender<(FillLog,String)>, Receiver<(FillLog,String)>) = unbounded();
+    spawn(move || {
+        let mut ooa2owner = BTreeMap::new();
+        let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
+        let market = Market::deserialize(&mut &market_data[8..]).unwrap();
+        let market_name = parse_name(&market.name);
+        info!("Market: {}", market_name.clone());
+        loop {
+            let result = tx_receiver.recv();
+            if result.is_ok() {
+                let (mut fill_log, tx_hash) = result.unwrap();
+                let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker);
+                if result.is_some() {
+                    let maker_owner = result.unwrap();
+                    if ooa2owner.contains_key(&fill_log.maker) {
+                        ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
                     }
-                    Err(e) => {
-                        error!("account subscription error: {:?}", e);
-                        break;
-                    }
+                    fill_log.maker = maker_owner;
                 }
+                let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker);
+                if result.is_some() {
+                    let maker_owner = result.unwrap();
+                    if ooa2owner.contains_key(&fill_log.taker) {
+                        ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
+                    }
+                    fill_log.taker = maker_owner;
+                }
+                let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
+                let t = serde_json::to_string(&trade).unwrap();
+                info!("{:?}, signature: {}", t, tx_hash);
+            }
+        }
+    });
+    loop {
+        match receiver.recv() {
+            Ok(response) => {
+                // remove logs if contains
+                let any = response.value.logs.iter().any(|x|x.contains("error"));
+                if any {
+                    continue;
+                }
+                for log in &response.value.logs{
+                    if log.contains("Program data: ") {
+                        let data = log.replace("Program data: ", "");
+                        let data = base64::decode(data).unwrap();
+                        if discriminator == data.as_slice()[..8] {
+                            let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+                            tx_sender.send((fill_log, response.value.signature.clone())).unwrap()
+                            // let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
+                            // let t = serde_json::to_string(&trade).unwrap();
+                            // info!("{:?}, signature: {}", t, response.value.signature);
+                        }
+                    }
+                    // println!("{}", log);
+                }
+            }
+            Err(e) => {
+                error!("account subscription error: {:?}", e);
+                break;
+            }
+        }
     }
 }
