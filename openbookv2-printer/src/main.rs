@@ -70,6 +70,7 @@ fn main() {
             let result = tx_receiver.recv();
             if result.is_ok() {
                 let (mut fill_log, tx_hash) = result.unwrap();
+                // fetch owner of ooa and store it in the
                 let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker);
                 if result.is_some() {
                     let maker_owner = result.unwrap();
