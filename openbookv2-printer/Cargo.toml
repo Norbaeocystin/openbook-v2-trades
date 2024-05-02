@@ -6,20 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# openbook-v2 = {workspace = true}
-anchor-client = { workspace = true  }
 anchor-lang = { workspace = true  }
-anchor-spl = { workspace = true  }
-fixed = { workspace = true }
-pyth-sdk-solana = { workspace = true  }
 solana-account-decoder = { workspace = true  }
 solana-client = { workspace = true  }
-solana-logger ={ workspace = true  }
 solana-program = { workspace = true  }
-solana-program-test = { workspace = true  }
-solana-rpc = { workspace = true  }
-solana-sdk = { workspace = true  }
-spl-associated-token-account = { workspace = true  }
 openbookv2-generated = {path = "../openbookv2-generated"}
 base64 = "0.22.0"
 clap = { version = "4.3.11", features = ["derive"] }
