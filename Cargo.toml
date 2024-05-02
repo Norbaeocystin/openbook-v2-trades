@@ -1,20 +1,15 @@
 [workspace]
-members = [ "openbookv2-generated",
+members = [
+    "openbookv2-generated",
     "openbookv2-printer",
 ]
 
 [workspace.dependencies]
 # openbook-v2 = { git = "https://github.com/openbook-dex/openbook-v2" }
-anchor-client = "0.29.0"
 anchor-lang = "0.29.0"
-anchor-spl = "0.29.0"
-fixed = { git = "https://github.com/blockworks-foundation/fixed.git", branch = "v1.11.0-borsh0_10-mango" }
-pyth-sdk-solana = "0.10.1"
 solana-account-decoder = "~1.17.1"
 solana-client = "~1.17.1"
 solana-logger = "~1.17.1"
 solana-program = "~1.17.1"
-solana-program-test = "~1.17.1"
-solana-rpc = "~1.17.1"
 solana-sdk = "~1.17.1"
 spl-associated-token-account = "1.0.3"
