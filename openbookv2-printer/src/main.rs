@@ -40,9 +40,9 @@ struct Cli {
     #[arg(short, long, action)]
     debug: bool,
     #[arg(short,long, default_value = "5555")]
-    port_zeromq: String,
+    port: String,
     #[arg(short,long, default_value = "127.0.0.1")]
-    server_zeromq: String,
+    host: String,
 }
 
 fn main() {
@@ -66,9 +66,9 @@ fn main() {
     let (tx_sender, tx_receiver):(Sender<(FillLog,String)>, Receiver<(FillLog,String)>) = unbounded();
     spawn(move || {
         let mut ctx = zmq::Context::new();
-        let zero_url = format!("tcp://{}:{}", cli.server_zeromq, cli.port_zeromq);
-        let socket = ctx.socket(zmq::REQ).unwrap();
-        socket.connect(&zero_url).unwrap();
+        let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
+        let socket = ctx.socket(zmq::PUB).unwrap();
+        socket.bind(&zero_url).unwrap();
         let mut ooa2owner = BTreeMap::new();
         let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
         let market = Market::deserialize(&mut &market_data[8..]).unwrap();
