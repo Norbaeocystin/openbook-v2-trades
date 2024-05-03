@@ -41,7 +41,7 @@ struct Cli {
     debug: bool,
     #[arg(short,long, default_value = "5555")]
     port: String,
-    #[arg(short,long, default_value = "127.0.0.1")]
+    #[arg(long, default_value = "127.0.0.1")]
     host: String,
 }
 
