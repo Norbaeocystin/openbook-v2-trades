@@ -43,6 +43,8 @@ struct Cli {
     port: String,
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
+    #[arg(short, long, action)]
+    connect: bool,
 }
 
 fn main() {
@@ -68,7 +70,11 @@ fn main() {
         let mut ctx = zmq::Context::new();
         let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
         let socket = ctx.socket(zmq::PUB).unwrap();
-        socket.bind(&zero_url).unwrap();
+        if cli.connect {
+           socket.connect(&zero_url).unwrap()
+        } else {
+            socket.bind(&zero_url).unwrap();
+        }
         let mut ooa2owner = BTreeMap::new();
         let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
         let market = Market::deserialize(&mut &market_data[8..]).unwrap();

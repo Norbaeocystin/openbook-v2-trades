@@ -1,5 +1,9 @@
 
-Branch where data will be send to zeromq (PUB) - control with arguments --port --host
+Branch where data will be send to zeromq (PUB) - control with arguments --port --host .<br>
+Defaultly publisher will use bind, if you want to connect publisher use:
+```
+--connect
+```
 
 Fetching trades data for openbook v2 using websocket. This is just proof of concept. Use on your own risk!.
 Websocket can be and will be instable
