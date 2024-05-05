@@ -2,6 +2,8 @@
 Fetching trades data for openbook v2 using websocket. This is just proof of concept. Use on your own risk!.
 Websocket can be and will be instable
 
+##### If you want to publish filled trades to zeromq and process afterwards use branch zeromq
+
 #### to run
 ```
 cargo run --bin openbookv2-printer -- --rpc-url <YourRPC> --market <Pubkey of market which you want to listen, default SOL-USDC>
