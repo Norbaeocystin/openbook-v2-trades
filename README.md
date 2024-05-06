@@ -15,6 +15,12 @@ or you can build with cargo build --release
 cargo run --example market -- --rpc-url <YourRPCWhereYouCanMakeGPACalls>
 ```
 
+### to run more market via multiple subscriptions over one websocket use branch multiple (unstable ...)
+```
+git switch multiple
+cargo run -- --market CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
+```
+
 #### TODO
  - [ ] option to use polling via getBlock rpc call ...
  - [ ] store data in db (redis,mongodb)
