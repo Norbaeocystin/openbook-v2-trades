@@ -34,8 +34,8 @@ mod utils;
 struct Cli {
     #[arg(short,long, default_value = "https://api.mainnet-beta.solana.com")]
     rpc_url: String,
-    #[arg(short,long, default_value = "CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3")] // SOL-USDC market default
-    market: String,
+    #[arg(short,long, value_delimiter = ' ', num_args = 1..50, default_value = "CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3")] // SOL-USDC market default
+    market: Vec<String>,
     #[arg(short, long, action)]
     debug: bool,
 
@@ -49,27 +49,47 @@ fn main() {
         env_logger::builder().filter_level(LevelFilter::Info).init();
     }
     let client = RpcClient::new(&cli.rpc_url);
-    let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
-    let market = Market::deserialize(&mut &market_data[8..]).unwrap();
-    let market_name = parse_name(&market.name);
-    debug!("Market: {}", market_name.clone());
+    let market_keys = cli.market.iter().map(|market_key| Pubkey::from_str(market_key).unwrap()).collect::<Vec<Pubkey>>();
+    let accounts = client.get_multiple_accounts(&market_keys).unwrap();
+    let mut event_heaps = vec![];
+    for option in accounts {
+        let data = option.unwrap().data;
+        let market = Market::deserialize(&mut &data[8..]).unwrap();
+        let market_name = parse_name(&market.name);
+        event_heaps.push(market.event_heap.to_string());
+        info!("Listening to fills for market: {}", market_name.clone());
+    }
     let wss_url = cli.rpc_url.replace("https://", "wss://");
-    let (subscription, receiver) = PubsubClient::logs_subscribe(&wss_url,
-       RpcTransactionLogsFilter::Mentions(vec![market.event_heap.to_string()]),
-        RpcTransactionLogsConfig{ commitment: None }
-    ).unwrap();
+    let mut receivers = vec![];
+    for event_heap in event_heaps {
+        info!("subscribing to event heap: {}", event_heap);
+        let (subscription, receiver) = PubsubClient::logs_subscribe(&wss_url,
+                                                                    RpcTransactionLogsFilter::Mentions(vec![event_heap]),
+                                                                    RpcTransactionLogsConfig { commitment: None }
+        ).unwrap();
+        receivers.push(receiver);
+    }
+    info!("length of receivers: {}", receivers.len());
     let discriminator = FillLog::discriminator();
-    let (tx_sender, tx_receiver):(Sender<(FillLog,String)>, Receiver<(FillLog,String)>) = unbounded();
+    let (tx_sender, tx_receiver):(Sender<(FillLog,String, usize)>, Receiver<(FillLog,String, usize)>) = unbounded();
     spawn(move || {
         let mut ooa2owner = BTreeMap::new();
-        let market_data = client.get_account_data(&Pubkey::from_str(&cli.market).unwrap()).unwrap();
-        let market = Market::deserialize(&mut &market_data[8..]).unwrap();
-        let market_name = parse_name(&market.name);
-        info!("Market: {}", market_name.clone());
+        let accounts = client.get_multiple_accounts(&market_keys).unwrap();
+        let mut market_names = vec![];
+        let mut markets = vec![];
+        for option in accounts {
+            let data = option.unwrap().data;
+            let market = Market::deserialize(&mut &data[8..]).unwrap();
+            let market_name = parse_name(&market.name);
+            market_names.push(market_name);
+            markets.push(market);
+        }
         loop {
             let result = tx_receiver.recv();
             if result.is_ok() {
-                let (mut fill_log, tx_hash) = result.unwrap();
+                let (mut fill_log, tx_hash, idx) = result.unwrap();
+                let market = markets.get(idx).unwrap();
+                let market_name = market_names.get(idx).unwrap();
                 let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker);
                 if result.is_some() {
                     let maker_owner = result.unwrap();
@@ -92,32 +112,36 @@ fn main() {
             }
         }
     });
-    loop {
-        match receiver.recv() {
-            Ok(response) => {
-                // remove logs if contains
-                let any = response.value.logs.iter().any(|x|x.contains("error"));
-                if any {
-                    continue;
-                }
-                for log in &response.value.logs{
-                    if log.contains("Program data: ") {
-                        let data = log.replace("Program data: ", "");
-                        let data = base64::decode(data).unwrap();
-                        if discriminator == data.as_slice()[..8] {
-                            let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                            tx_sender.send((fill_log, response.value.signature.clone())).unwrap()
-                            // let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
-                            // let t = serde_json::to_string(&trade).unwrap();
-                            // info!("{:?}, signature: {}", t, response.value.signature);
-                        }
+    // let receiver = receivers.first().unwrap().clone();
+    // let idx = 0;
+    'outer: loop {
+        for (idx, receiver) in receivers.iter().enumerate() {
+            match receiver.recv() {
+                Ok(response) => {
+                    // remove logs if contains
+                    let any = response.value.logs.iter().any(|x| x.contains("error"));
+                    if any {
+                        continue;
                     }
-                    // println!("{}", log);
+                    for log in &response.value.logs {
+                        if log.contains("Program data: ") {
+                            let data = log.replace("Program data: ", "");
+                            let data = base64::decode(data).unwrap();
+                            if discriminator == data.as_slice()[..8] {
+                                let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+                                tx_sender.send((fill_log, response.value.signature.clone(), idx)).unwrap()
+                                // let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
+                                // let t = serde_json::to_string(&trade).unwrap();
+                                // info!("{:?}, signature: {}", t, response.value.signature);
+                            }
+                        }
+                        // println!("{}", log);
+                    }
                 }
-            }
-            Err(e) => {
-                error!("account subscription error: {:?}", e);
-                break;
+                Err(e) => {
+                    error!("account subscription error: {:?}", e);
+                    break 'outer;
+                }
             }
         }
     }
