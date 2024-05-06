@@ -41,6 +41,7 @@ struct Cli {
 
 }
 
+// CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
 fn main() {
     let cli = Cli::parse();
     if cli.debug {
@@ -61,15 +62,16 @@ fn main() {
     }
     let wss_url = cli.rpc_url.replace("https://", "wss://");
     let mut receivers = vec![];
-    for event_heap in event_heaps {
-        info!("subscribing to event heap: {}", event_heap);
+    let mut subscriptions = vec![];
+    for event_heap in event_heaps.iter() {
+        debug!("subscribing to event heap: {}", event_heap);
         let (subscription, receiver) = PubsubClient::logs_subscribe(&wss_url,
-                                                                    RpcTransactionLogsFilter::Mentions(vec![event_heap]),
+                                                                    RpcTransactionLogsFilter::Mentions(vec![event_heap.to_string()]),
                                                                     RpcTransactionLogsConfig { commitment: None }
         ).unwrap();
-        receivers.push(receiver);
+        subscriptions.push(subscription);
+        receivers.push(receiver.clone());
     }
-    info!("length of receivers: {}", receivers.len());
     let discriminator = FillLog::discriminator();
     let (tx_sender, tx_receiver):(Sender<(FillLog,String, usize)>, Receiver<(FillLog,String, usize)>) = unbounded();
     spawn(move || {
@@ -130,12 +132,8 @@ fn main() {
                             if discriminator == data.as_slice()[..8] {
                                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
                                 tx_sender.send((fill_log, response.value.signature.clone(), idx)).unwrap()
-                                // let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0",""));
-                                // let t = serde_json::to_string(&trade).unwrap();
-                                // info!("{:?}, signature: {}", t, response.value.signature);
                             }
                         }
-                        // println!("{}", log);
                     }
                 }
                 Err(e) => {
