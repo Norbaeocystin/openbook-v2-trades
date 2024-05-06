@@ -10,12 +10,12 @@ cargo run --bin openbookv2-printer -- --rpc-url <YourRPC> --market <Pubkey of ma
 ```
 or you can build with cargo build --release
 
-### if you want to print all openbook markets:
+#### if you want to print all openbook markets:
 ```
 cargo run --example market -- --rpc-url <YourRPCWhereYouCanMakeGPACalls>
 ```
 
-### to run more market via multiple subscriptions over one websocket use branch multiple (unstable ...)
+#### to run more market via multiple subscriptions over one websocket use branch multiple (unstable ...)
 ```
 git switch multiple
 cargo run -- --market CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
