@@ -21,7 +21,7 @@ use solana_client::rpc_filter::{Memcmp, RpcFilterType};
 use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_program::pubkey::Pubkey;
 use tokio::spawn;
-use tokio::sync::mpsc::channel;
+use tokio::sync::mpsc::{channel, unbounded_channel};
 use openbookv2_generated::id;
 use openbookv2_generated::state::Market;
 use openbookv2_generated::FillEvent;
@@ -70,13 +70,13 @@ async fn main() {
     let wss_url = cli.rpc_url.replace("https://", "wss://");
     // let mut unsubscribes = vec![];
     let pubsub_client: Arc<PubsubClient> = Arc::new(PubsubClient::new(&wss_url).await.unwrap());
-    let (tx_sender, mut tx_receiver) = channel::<(FillLog, String, usize)>(100);
+    let (tx_sender, mut tx_receiver) = unbounded_channel::<(FillLog, String, usize)>();
     for (idx,event_heap) in event_heaps.iter().enumerate() {
         debug!("subscribing to event heap: {}", event_heap);
-        let clone = Arc::clone(&pubsub_client);
         let discriminator = FillLog::discriminator();
         let tx_sender = tx_sender.clone();
         let event_heap = event_heap.clone();
+        let clone = pubsub_client.clone();
         spawn( async move {
             let (ref mut subscription, unsubscribe) = clone.logs_subscribe(
                 RpcTransactionLogsFilter::Mentions(vec![event_heap.to_string()]),
@@ -94,7 +94,7 @@ async fn main() {
                         let data = base64::decode(data).unwrap();
                         if discriminator == data.as_slice()[..8] {
                             let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                            tx_sender.send((fill_log, response.value.signature.clone(), idx)).await.unwrap();
+                            tx_sender.send((fill_log, response.value.signature.clone(), idx)).unwrap();
                         }
                     }
                 }
