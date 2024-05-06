@@ -21,3 +21,5 @@ cargo run --example market -- --rpc-url <YourRPCWhereYouCanMakeGPACalls>
  - [ ] geyser plugin instead of websocket
  - [ ] handling of websocket 
  - [ ] print trades for all markets.
+
+cargo run -- --market CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs --rpc-url https://convincing-holy-bush.solana-mainnet.quiknode.pro/92108bc163d771436701e08e27caf45f2759cb85/
