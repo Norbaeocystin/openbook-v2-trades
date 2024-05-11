@@ -44,7 +44,7 @@ struct Cli {
     market: Vec<String>,
     #[arg(short, long, action)]
     debug: bool,
-    #[arg(short,long, default_value = "5555")]
+    #[arg(short,long, default_value = "8585")]
     port: String,
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
