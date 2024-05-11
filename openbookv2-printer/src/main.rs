@@ -19,6 +19,7 @@ use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, 
 use solana_client::rpc_filter::{Memcmp, RpcFilterType};
 use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_program::pubkey::Pubkey;
+use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, unbounded_channel};
 use zmq;
@@ -59,7 +60,9 @@ async fn main() {
     } else {
         env_logger::builder().filter_level(LevelFilter::Info).init();
     }
-    let client = RpcClient::new(cli.rpc_url.clone());
+    //let client = RpcClient::new(cli.rpc_url.clone());
+    let processed_commitment = CommitmentConfig::processed();
+    let client = RpcClient::new_with_commitment(cli.rpc_url.clone(),processed_commitment);
     let market_keys = cli.market.iter().map(|market_key| Pubkey::from_str(market_key).unwrap()).collect::<Vec<Pubkey>>();
     let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
     let mut event_heaps = vec![];
