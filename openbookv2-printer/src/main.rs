@@ -112,8 +112,8 @@ fn main() {
         match receiver.recv() {
             Ok(response) => {
                 // remove logs if contains
-                let any = response.value.logs.iter().any(|x|x.contains("error"));
-                if any {
+                if let Some(error) = response.value.err.as_ref() {
+                    // warn!("Skipping TX {:?} with error: {error:?}", response.value.signature);
                     continue;
                 }
                 for log in &response.value.logs{
