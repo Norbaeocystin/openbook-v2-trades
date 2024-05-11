@@ -21,6 +21,7 @@ use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_program::pubkey::Pubkey;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, unbounded_channel};
+use zmq;
 use openbookv2_generated::id;
 use openbookv2_generated::state::Market;
 use openbookv2_generated::FillEvent;
@@ -43,7 +44,10 @@ struct Cli {
     market: Vec<String>,
     #[arg(short, long, action)]
     debug: bool,
-
+    #[arg(short,long, default_value = "5555")]
+    port: String,
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
 }
 
 // CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
@@ -100,38 +104,45 @@ async fn main() {
             }
         });
     }
-        let mut ooa2owner = BTreeMap::new();
-        let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
-        let mut market_names = vec![];
-        let mut markets = vec![];
-        for option in accounts {
-            let data = option.unwrap().data;
-            let market = Market::deserialize(&mut &data[8..]).unwrap();
-            let market_name = parse_name(&market.name);
-            market_names.push(market_name);
-            markets.push(market);
-        }
-        while let Some((mut fill_log, tx_hash, idx)) = tx_receiver.recv().await {
-            let market = markets.get(idx).unwrap();
-            let market_name: &String = market_names.get(idx).unwrap();
-            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
-            if result.is_some() {
-                let maker_owner = result.unwrap();
-                if ooa2owner.contains_key(&fill_log.maker) {
-                    ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
-                }
-                fill_log.maker = maker_owner;
+
+    let mut ctx = zmq::Context::new();
+    let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
+    let socket = ctx.socket(zmq::PUB).unwrap();
+    socket.bind(&zero_url).unwrap();
+
+    let mut ooa2owner = BTreeMap::new();
+    let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
+    let mut market_names = vec![];
+    let mut markets = vec![];
+    for option in accounts {
+        let data = option.unwrap().data;
+        let market = Market::deserialize(&mut &data[8..]).unwrap();
+        let market_name = parse_name(&market.name);
+        market_names.push(market_name);
+        markets.push(market);
+    }
+    while let Some((mut fill_log, tx_hash, idx)) = tx_receiver.recv().await {
+        let market = markets.get(idx).unwrap();
+        let market_name: &String = market_names.get(idx).unwrap();
+        let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
+        if result.is_some() {
+            let maker_owner = result.unwrap();
+            if ooa2owner.contains_key(&fill_log.maker) {
+                ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
             }
-            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
-            if result.is_some() {
-                let maker_owner = result.unwrap();
-                if ooa2owner.contains_key(&fill_log.taker) {
-                    ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
-                }
-                fill_log.taker = maker_owner;
-            }
-            let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0", ""));
-            let t = serde_json::to_string(&trade).unwrap();
-            info!("{:?}, signature: {}", t, tx_hash);
+            fill_log.maker = maker_owner;
         }
+        let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
+        if result.is_some() {
+            let maker_owner = result.unwrap();
+            if ooa2owner.contains_key(&fill_log.taker) {
+                ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
+            }
+            fill_log.taker = maker_owner;
+        }
+        let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0", ""));
+        let t = serde_json::to_string(&trade).unwrap();
+        socket.send(&t, 0);
+        info!("{:?}, signature: {}", t, tx_hash);
+    }
 }
