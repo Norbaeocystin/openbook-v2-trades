@@ -60,7 +60,6 @@ async fn main() {
     } else {
         env_logger::builder().filter_level(LevelFilter::Info).init();
     }
-    //let client = RpcClient::new(cli.rpc_url.clone());
     let processed_commitment = CommitmentConfig::processed();
     let client = RpcClient::new_with_commitment(cli.rpc_url.clone(),processed_commitment);
     let market_keys = cli.market.iter().map(|market_key| Pubkey::from_str(market_key).unwrap()).collect::<Vec<Pubkey>>();
