@@ -27,3 +27,5 @@ cargo run -- --market CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8
  - [ ] geyser plugin instead of websocket
  - [ ] handling of websocket 
  - [ ] print trades for all markets.
+
+cargo run -- --market CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 

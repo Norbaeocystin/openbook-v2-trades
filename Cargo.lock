@@ -2574,8 +2574,8 @@ dependencies = [
  "anchor-lang",
  "base64 0.22.0",
  "clap 4.5.4",
- "crossbeam-channel",
  "env_logger 0.10.2",
+ "futures",
  "log",
  "openbookv2-generated",
  "serde",
@@ -2583,6 +2583,7 @@ dependencies = [
  "solana-account-decoder",
  "solana-client",
  "solana-program",
+ "tokio",
 ]
 
 [[package]]
