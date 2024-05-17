@@ -65,18 +65,22 @@ async fn main() {
     let market_keys = cli.market.iter().map(|market_key| Pubkey::from_str(market_key).unwrap()).collect::<Vec<Pubkey>>();
     let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
     let mut event_heaps = vec![];
-    for option in accounts {
-        let data = option.unwrap().data;
+    let mut market_names = BTreeMap::new();
+    let mut markets = BTreeMap::new();
+    for (idx,option) in accounts.iter().enumerate() {
+        let data = option.clone().unwrap().data;
         let market = Market::deserialize(&mut &data[8..]).unwrap();
         let market_name = parse_name(&market.name);
         event_heaps.push(market.event_heap.to_string());
-        info!("Listening to fills for market: {}", market_name.clone());
+        market_names.insert(market_keys[idx].clone(), market_name.clone());
+        markets.insert(market_keys[idx].clone(), market);
+        info!("Listening to fills for market: {}", market_name);
     }
     let wss_url = cli.rpc_url.replace("https://", "wss://");
     // let mut unsubscribes = vec![];
     let pubsub_client: Arc<PubsubClient> = Arc::new(PubsubClient::new(&wss_url).await.unwrap());
-    let (tx_sender, mut tx_receiver) = unbounded_channel::<(FillLog, String, usize)>();
-    for (idx,event_heap) in event_heaps.iter().enumerate() {
+    let (tx_sender, mut tx_receiver) = unbounded_channel::<(FillLog, String)>();
+    for event_heap in event_heaps.iter() {
         debug!("subscribing to event heap: {}", event_heap);
         let discriminator = FillLog::discriminator();
         let tx_sender = tx_sender.clone();
@@ -99,7 +103,7 @@ async fn main() {
                         let data = base64::decode(data).unwrap();
                         if discriminator == data.as_slice()[..8] {
                             let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                            tx_sender.send((fill_log, response.value.signature.clone(), idx)).unwrap();
+                            tx_sender.send((fill_log, response.value.signature.clone())).unwrap();
                         }
                     }
                 }
@@ -113,19 +117,9 @@ async fn main() {
     socket.bind(&zero_url).unwrap();
 
     let mut ooa2owner = BTreeMap::new();
-    let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
-    let mut market_names = vec![];
-    let mut markets = vec![];
-    for option in accounts {
-        let data = option.unwrap().data;
-        let market = Market::deserialize(&mut &data[8..]).unwrap();
-        let market_name = parse_name(&market.name);
-        market_names.push(market_name);
-        markets.push(market);
-    }
-    while let Some((mut fill_log, tx_hash, idx)) = tx_receiver.recv().await {
-        let market = markets.get(idx).unwrap();
-        let market_name: &String = market_names.get(idx).unwrap();
+    while let Some((mut fill_log, tx_hash)) = tx_receiver.recv().await {
+        let market = markets.get(&fill_log.market).unwrap();
+        let market_name: &String = market_names.get(&fill_log.market).unwrap();
         let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
         if result.is_some() {
             let maker_owner = result.unwrap();
