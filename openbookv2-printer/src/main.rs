@@ -9,7 +9,7 @@ use anchor_lang::__private::base64;
 use clap::Parser;
 // use crossbeam_channel::{Receiver, Sender, unbounded};
 use futures::StreamExt;
-use log::{debug, error, info, LevelFilter};
+use log::{debug, error, info, LevelFilter, warn};
 use serde::Serialize;
 use serde_json;
 use solana_account_decoder::UiAccountEncoding;
@@ -118,27 +118,30 @@ async fn main() {
 
     let mut ooa2owner = BTreeMap::new();
     while let Some((mut fill_log, tx_hash)) = tx_receiver.recv().await {
-        let market = markets.get(&fill_log.market).unwrap();
-        let market_name: &String = market_names.get(&fill_log.market).unwrap();
-        let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
-        if result.is_some() {
-            let maker_owner = result.unwrap();
-            if ooa2owner.contains_key(&fill_log.maker) {
-                ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
+        if let Some(market) = markets.get(&fill_log.market) {
+            let market_name: &String = market_names.get(&fill_log.market).unwrap();
+            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
+            if result.is_some() {
+                let maker_owner = result.unwrap();
+                if ooa2owner.contains_key(&fill_log.maker) {
+                    ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
+                }
+                fill_log.maker = maker_owner;
             }
-            fill_log.maker = maker_owner;
-        }
-        let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
-        if result.is_some() {
-            let maker_owner = result.unwrap();
-            if ooa2owner.contains_key(&fill_log.taker) {
-                ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
+            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
+            if result.is_some() {
+                let maker_owner = result.unwrap();
+                if ooa2owner.contains_key(&fill_log.taker) {
+                    ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
+                }
+                fill_log.taker = maker_owner;
             }
-            fill_log.taker = maker_owner;
+            let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0", ""));
+            let t = serde_json::to_string(&trade).unwrap();
+            socket.send(&t, 0);
+            info!("{:?}, signature: {}", t, tx_hash);
+        } else {
+            warn!("tx: {} contains log, which can't be parsed", tx_hash);
         }
-        let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0", ""));
-        let t = serde_json::to_string(&trade).unwrap();
-        socket.send(&t, 0);
-        info!("{:?}, signature: {}", t, tx_hash);
     }
 }
