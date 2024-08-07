@@ -6,8 +6,7 @@ members = [
 
 [workspace.dependencies]
 # openbook-v2 = { git = "https://github.com/openbook-dex/openbook-v2" }
-anchor-lang = "0.31.0"
-solana-account-decoder = "~1.18.21"
-solana-client = "~1.18.21"
-solana-logger = "~1.18.21"
-solana-program = "~1.18."
+anchor-lang = "0.30.1"
+solana-client = "~1.18.20"
+solana-logger = "~1.18.20"
+solana-program = "~1.18.20"

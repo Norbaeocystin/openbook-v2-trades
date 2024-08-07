@@ -1,6 +1,6 @@
 use futures::TryStreamExt;
 use std::borrow::BorrowMut;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hasher;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -21,8 +21,7 @@ use openbookv2_generated::FillEvent;
 use openbookv2_generated::{id, AnyEvent, EventHeap};
 use serde::Serialize;
 use serde_json;
-use solana_account_decoder::UiAccountEncoding;
-use solana_client::rpc_client::RpcClient;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::{
     RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionLogsConfig,
     RpcTransactionLogsFilter,
@@ -35,6 +34,11 @@ use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, unbounded_channel};
+use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::prelude::{
+    SubscribeRequest, SubscribeRequestFilterTransactions,
+    SubscribeRequestFilterAccountsFilterMemcmp, SubscribeUpdate, SubscribeUpdateAccount,
+};
 use zmq;
 
 pub mod constants;
@@ -56,10 +60,13 @@ struct Cli {
     port: String,
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
+    #[arg(short, long, default_value = "http://127.0.0.1:10000")]
+    grpc: String,
 }
 
 // CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
     if cli.debug {
         env_logger::builder()
@@ -75,19 +82,56 @@ fn main() {
         .iter()
         .map(|market_key| Pubkey::from_str(market_key).unwrap())
         .collect::<Vec<Pubkey>>();
-    let accounts = client.get_multiple_accounts(&market_keys).unwrap();
-    let mut event_heap_keys = vec![];
+    let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
+    let mut event_heaps = vec![];
     let mut market_names = BTreeMap::new();
     let mut markets = BTreeMap::new();
     for (idx, option) in accounts.iter().enumerate() {
         let data = option.clone().unwrap().data;
         let market = Market::deserialize(&mut &data[8..]).unwrap();
         let market_name = parse_name(&market.name);
-        event_heap_keys.push(market.event_heap);
+        event_heaps.push(market.event_heap.to_string());
         market_names.insert(market_keys[idx].clone(), market_name.clone());
         markets.insert(market_keys[idx].clone(), market);
         info!("Polling fills for market: {}", market_name);
     }
+
+    let mut grpc_client = GeyserGrpcClient::build_from_shared(cli.grpc)
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let pong = grpc_client.ping(0).await.unwrap();
+    info!("{:?}", pong);
+
+    let mut transactions = HashMap::new();
+    for key in market_keys.iter() {
+        let tx_filter = SubscribeRequestFilterTransactions{
+            vote: None,
+            failed: None,
+            signature: None,
+            account_include: vec![],
+            account_exclude: vec![],
+            account_required: vec![key.to_string()],
+        };
+        transactions.insert(key.to_string(), tx_filter);
+    }
+    let request =  SubscribeRequest {
+        accounts: Default::default(),
+        slots: Default::default(),
+        transactions: transactions,
+        blocks: Default::default(),
+        blocks_meta: Default::default(),
+        entry: Default::default(),
+        commitment: None,
+        accounts_data_slice: vec![],
+        ping: None,
+        transactions_status: Default::default(),
+    };
+    let (_subscribe_tx, mut stream) = grpc_client
+        .subscribe_with_request(Some(request))
+        .await
+        .unwrap();
     // let mut unsubscribes = vec![];
     // while let Some(response) = subscription.next().await {
     //     if let Some(error) = response.value.err.as_ref() {
@@ -110,78 +154,4 @@ fn main() {
     let socket = ctx.socket(zmq::PUB).unwrap();
     socket.bind(&zero_url).unwrap();
 
-    // let mut ooa2owner = BTreeMap::new();
-    let mut done = HashSet::new();
-    while true {
-        let event_heap_accounts: Vec<Account> = client
-            .get_multiple_accounts(&event_heap_keys)
-            .unwrap()
-            .into_iter()
-            .map(|acc| acc.unwrap())
-            .collect();
-        let event_heaps: Vec<EventHeap> = event_heap_accounts
-            .into_iter()
-            .map(|acc| EventHeap::deserialize(acc.data.as_slice().borrow_mut()).unwrap())
-            .collect();
-        for event in event_heaps.iter() {
-            for node in event.nodes.iter() {
-                if node.event.event_type == 0 {
-                    let bytes = node.event.try_to_vec().unwrap();
-                    let fill_event = FillEvent::deserialize(bytes.as_slice().borrow_mut()).unwrap();
-                    fill_event.try_to_vec().unwrap();
-
-                    if fill_event.timestamp != 0 {
-                        let hash = hash(&bytes);
-                        if !done.contains(&hash) {
-                            info!("{:?}", fill_event);
-                            done.insert(hash);
-                        }
-                    }
-                }
-            }
-        }
-        sleep(Duration::from_secs(10))
-    }
-    // while true {
-    //     let result = client.get_multiple_accounts(&event_heap_keys);
-    //     match result {
-    //         Ok(response) => {
-    //             let latest_heap_accounts = response
-    //                 .into_iter()
-    //                 .map(|acc| acc.unwrap())
-    //                 .collect();
-    //
-    //         }
-    //         Err(err) => {
-    //             warn!("got error: {}", err);
-    //         }
-    //     }
-    // }
-    // while let Some((mut fill_log, tx_hash)) = tx_receiver.recv().await {
-    //     if let Some(market) = markets.get(&fill_log.market) {
-    //         let market_name: &String = market_names.get(&fill_log.market).unwrap();
-    //         let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
-    //         if result.is_some() {
-    //             let maker_owner = result.unwrap();
-    //             if ooa2owner.contains_key(&fill_log.maker) {
-    //                 ooa2owner.insert(fill_log.maker.clone(), maker_owner.clone());
-    //             }
-    //             fill_log.maker = maker_owner;
-    //         }
-    //         let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
-    //         if result.is_some() {
-    //             let maker_owner = result.unwrap();
-    //             if ooa2owner.contains_key(&fill_log.taker) {
-    //                 ooa2owner.insert(fill_log.taker.clone(), maker_owner.clone());
-    //             }
-    //             fill_log.taker = maker_owner;
-    //         }
-    //         let trade = Trade::new(&fill_log, &market, market_name.clone().replace("\0", ""));
-    //         let t = serde_json::to_string(&trade).unwrap();
-    //         socket.send(&t, 0);
-    //         info!("{:?}, signature: {}", t, tx_hash);
-    //     } else {
-    //         warn!("tx: {} contains log, which can't be parsed", tx_hash);
-    //     }
-    // }
 }

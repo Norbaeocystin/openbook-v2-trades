@@ -1,6 +1,5 @@
 use anchor_lang::{AnchorDeserialize, Discriminator};
 use openbookv2_generated::{id, Market};
-use solana_account_decoder::UiAccountEncoding;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
 use solana_client::rpc_filter::Memcmp;
@@ -16,7 +15,7 @@ pub fn get_all_markets(client: RpcClient) -> Vec<(Pubkey, Market)> {
             RpcProgramAccountsConfig {
                 filters: Some(vec![market_filter]),
                 account_config: RpcAccountInfoConfig {
-                    encoding: Some(UiAccountEncoding::Base64),
+                    encoding: None,
                     data_slice: None,
                     commitment: None,
                     min_context_slot: None,
