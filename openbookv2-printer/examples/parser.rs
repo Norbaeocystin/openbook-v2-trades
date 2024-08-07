@@ -1,5 +1,5 @@
-use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator, event};
 use anchor_lang::prelude::borsh;
+use anchor_lang::{event, AnchorDeserialize, AnchorSerialize, Discriminator};
 use solana_program::pubkey::Pubkey;
 
 #[derive(Debug)]
@@ -27,18 +27,17 @@ pub struct FillLog {
     pub quantity: i64, // number of base lots
 }
 
-
-pub fn main(){
+pub fn main() {
     let data = vec![
         "lhcplJii10CnI1yNu/8vXkUqgSU3o20mSjzZtx/d7eCUeQzZACE/qgEAAEJIMWYAAAAAohcBAAAAAABkvCMD57g3rSwu61+YmqaAUgJhSvu60xT3sb+E4lUQ4wAAAAAAAAAAyAQAAAAAAABCSDFmAAAAACLJm4k4/WcLchsoYrnq3admVRzfbii7s68EbKm0dtXpAAAAAAAAAADJBAAAAAAAAHXeAQAAAAAACgAAAAAAAAA=",
         "xPmUIajkSQYL7zHCrjpsMNohieUs9fA6jy988YbbplZ7EexNmkPC3QEAAACnI1yNu/8vXkUqgSU3o20mSjzZtx/d7eCUeQzZACE/qo/nAAAAAAAA52yzsAEAAACn+QAAAAAAAICWmAAAAAAAAAAAAAAAAAB/xW4AAAAAAMgEAAAAAAAAAPOfhtY+AAAAAAAAAAAAANZP9acAAAAAAAAAAAAAAAA=",
         "COswOq5MnGkBIsmbiTj9ZwtyGyhiuerdp2ZVHN9uKLuzrwRsqbR21emAlpgAAAAAAMmrEgAAAAAAyQQAAAAAAAA=",
         ];
-    for item in data.iter(){
+    for item in data.iter() {
         let data = anchor_lang::__private::base64::decode(item).unwrap();
         let discriminator = FillLog::discriminator();
         if discriminator == data.as_slice()[..8] {
-           let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+            let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
             println!("{:?}", fill_log);
         }
     }
