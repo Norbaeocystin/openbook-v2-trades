@@ -147,7 +147,6 @@ async fn main() {
             match msg.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
                     let tx = tx.transaction.unwrap();
-                    Signature
                     let logs = tx.meta.unwrap().log_messages;
                     for log in logs.iter() {
                         if log.contains("Program data: ") {
