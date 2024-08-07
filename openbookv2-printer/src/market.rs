@@ -29,7 +29,7 @@ pub fn get_all_markets(client: RpcClient) -> Vec<(Pubkey, Market)> {
         // if key == &Pubkey::from_str("2ekKD6GQy9CPqyqZyFdERr14JcjD5QcJj7DbFfW23k4W").unwrap() {
         let market = Market::deserialize(&mut &account.data[8..]).unwrap();
         // let name = parse_name(&market.name);
-        key_and_market.push((key.clone(), market))
+        key_and_market.push((*key, market))
     }
-    return key_and_market;
+    key_and_market
 }

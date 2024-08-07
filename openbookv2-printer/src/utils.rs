@@ -6,19 +6,19 @@ use std::collections::BTreeMap;
 
 pub fn to_native(value: f64, decimals: f64) -> f64 {
     let d = 10_f64.powf(decimals);
-    return return value * d;
+    value * d
 }
 
 pub fn to_ui_decimals(value: f64, decimals: f64) -> f64 {
     let d = 10_f64.powf(decimals);
-    return return value / d;
+    value / d
 }
 
 pub fn price_lots_to_ui(price: i64, market: &Market) -> f64 {
     let coeff = (10_f64.powf((market.base_decimals as i8 - market.quote_decimals as i8) as f64)
         * market.quote_lot_size as f64)
         / market.base_lot_size as f64;
-    return price as f64 * coeff;
+    price as f64 * coeff
 }
 
 pub async fn get_owner_account_for_ooa(
@@ -38,7 +38,7 @@ pub async fn get_owner_account_for_ooa(
             }
         }
     } else {
-        return Some(ooa2owner.get(key).unwrap().clone());
+        return Some(*ooa2owner.get(key).unwrap());
     }
-    return None;
+    None
 }

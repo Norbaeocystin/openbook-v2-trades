@@ -20,13 +20,13 @@ pub struct Trade {
 
 impl Trade {
     pub fn new(fill_log: &FillLog, market: &Market, market_name: String) -> Trade {
-        let price_hr = price_lots_to_ui(fill_log.price, &market);
+        let price_hr = price_lots_to_ui(fill_log.price, market);
         // this is correct
         let quantity = to_ui_decimals(
             fill_log.quantity as f64 * market.base_lot_size as f64,
             market.base_decimals as f64,
         );
-        return Trade {
+        Trade {
             time_stamp: fill_log.timestamp,
             maker_owner: fill_log.maker.to_string(),
             taker_owner: fill_log.taker.to_string(),
@@ -34,8 +34,8 @@ impl Trade {
             quantity_double: quantity,
             market_id: fill_log.market.to_string(),
             taker_side: fill_log.taker_side,
-            market_name: market_name,
-        };
+            market_name,
+        }
     }
 }
 

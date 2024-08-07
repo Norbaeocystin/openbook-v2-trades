@@ -1,47 +1,27 @@
 use anchor_lang::__private::base64;
 use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
 use clap::Parser;
-use futures::TryStreamExt;
-use std::borrow::BorrowMut;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::hash::Hasher;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
-// use crossbeam_channel::{Receiver, Sender, unbounded};
-use crate::constants::OPENBOOK_V2;
 use crate::logs::{FillLog, Trade};
 use crate::name::parse_name;
 use crate::utils::{get_owner_account_for_ooa, price_lots_to_ui, to_native, to_ui_decimals};
 use futures::StreamExt;
 use log::{debug, error, info, warn, LevelFilter};
 use openbookv2_generated::state::Market;
-use openbookv2_generated::FillEvent;
-use openbookv2_generated::{id, AnyEvent, EventHeap};
-use serde::Serialize;
-use serde_json;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_client::rpc_config::{
-    RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionLogsConfig,
-    RpcTransactionLogsFilter,
-};
-use solana_client::rpc_filter::{Memcmp, RpcFilterType};
-use solana_client::rpc_response::{Response, RpcLogsResponse};
-use solana_program::hash::hash;
+use solana_program::hash::Hash;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
-use tokio::sync::mpsc::{channel, unbounded_channel};
+use tokio::sync::mpsc::{unbounded_channel};
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::CommitmentLevel;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest, SubscribeRequestFilterAccountsFilterMemcmp,
-    SubscribeRequestFilterTransactions, SubscribeUpdate, SubscribeUpdateAccount,
+    SubscribeRequest,
+    SubscribeRequestFilterTransactions,
 };
-use zmq;
 
 pub mod constants;
 mod logs;
@@ -66,6 +46,8 @@ struct Cli {
     grpc: String,
     #[clap(value_enum, default_value = "finalized")]
     commitment: Commitment,
+    #[arg(short, long, action)]
+    connect: bool,
 }
 
 #[derive(clap::ValueEnum, Clone)]
@@ -94,16 +76,14 @@ async fn main() {
         .map(|market_key| Pubkey::from_str(market_key).unwrap())
         .collect::<Vec<Pubkey>>();
     let accounts = client.get_multiple_accounts(&market_keys).await.unwrap();
-    let mut event_heaps = vec![];
     let mut market_names = BTreeMap::new();
     let mut markets = BTreeMap::new();
     for (idx, option) in accounts.iter().enumerate() {
         let data = option.clone().unwrap().data;
         let market = Market::deserialize(&mut &data[8..]).unwrap();
         let market_name = parse_name(&market.name);
-        event_heaps.push(market.event_heap.to_string());
-        market_names.insert(market_keys[idx].clone(), market_name.clone());
-        markets.insert(market_keys[idx].clone(), market);
+        market_names.insert(market_keys[idx], market_name.clone());
+        markets.insert(market_keys[idx], market);
         info!("Polling fills for market: {}", market_name);
     }
 
@@ -141,7 +121,7 @@ async fn main() {
     let request = SubscribeRequest {
         accounts: Default::default(),
         slots: Default::default(),
-        transactions: transactions,
+        transactions,
         blocks: Default::default(),
         blocks_meta: Default::default(),
         entry: Default::default(),
@@ -154,40 +134,77 @@ async fn main() {
         .subscribe_with_request(Some(request))
         .await
         .unwrap();
+
+    let (tx_sender, mut tx_receiver) = unbounded_channel::<(FillLog, String)>();
+    let discriminator = FillLog::discriminator();
+    spawn(
+    async move {
     while let Some(message) = stream.next().await {
         if let Ok(msg) = message {
             debug!("new message: {msg:?}");
-            let market = msg.filters.first().unwrap();
             #[allow(clippy::single_match)]
             match msg.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
                     let tx = tx.transaction.unwrap();
                     let logs = tx.meta.unwrap().log_messages;
-                    // TODO process logs
+                    for log in logs.iter() {
+                        if log.contains("Program data: ") {
+                            let data = log.replace("Program data: ", "");
+                            let data = base64::decode(data).unwrap();
+                            if discriminator == data.as_slice()[..8] {
+                                let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+                                tx_sender.send((fill_log, Hash::new(&tx.signature).to_string())).unwrap();
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
         }
     }
-    // let mut unsubscribes = vec![];
-    // while let Some(response) = subscription.next().await {
-    //     if let Some(error) = response.value.err.as_ref() {
-    //         // warn!("Skipping TX {:?} with error: {error:?}", response.value.signature);
-    //         continue;
-    //     }
-    //     for log in &response.value.logs {
-    //         if log.contains("Program data: ") {
-    //             let data = log.replace("Program data: ", "");
-    //             let data = base64::decode(data).unwrap();
-    //             if discriminator == data.as_slice()[..8] {
-    //                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-    //                 tx_sender.send((fill_log, response.value.signature.clone())).unwrap();
-    //             }
-    //         }
-    //     }
+        });
 
-    let mut ctx = zmq::Context::new();
+    let ctx = zmq::Context::new();
     let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
     let socket = ctx.socket(zmq::PUB).unwrap();
-    socket.bind(&zero_url).unwrap();
+    if cli.connect {
+        socket.connect(&zero_url).unwrap()
+    } else {
+        socket.bind(&zero_url).unwrap();
+    }
+
+    let mut ooa2owner = BTreeMap::new();
+    while let Some((mut fill_log, tx_hash)) = tx_receiver.recv().await {
+        if let Some(market) = markets.get(&fill_log.market) {
+            let market_name: &String = market_names.get(&fill_log.market).unwrap();
+            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.maker).await;
+            if result.is_some() {
+                let maker_owner = result.unwrap();
+                if ooa2owner.contains_key(&fill_log.maker) {
+                    ooa2owner.insert(fill_log.maker, maker_owner);
+                }
+                fill_log.maker = maker_owner;
+            }
+            let result = get_owner_account_for_ooa(&client, &ooa2owner, &fill_log.taker).await;
+            if result.is_some() {
+                let maker_owner = result.unwrap();
+                if ooa2owner.contains_key(&fill_log.taker) {
+                    ooa2owner.insert(fill_log.taker, maker_owner);
+                }
+                fill_log.taker = maker_owner;
+            }
+            let trade = Trade::new(&fill_log, market, market_name.clone().replace('\0', ""));
+            let t = serde_json::to_string(&trade).unwrap();
+            let r = socket.send(&t, 0);
+            match r {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("sending to socket returned error: {}", err);
+                }
+            }
+            info!("{:?}, signature: {}", t, tx_hash);
+        } else {
+            warn!("tx: {} contains log, which can't be parsed", tx_hash);
+        }
+    }
 }
