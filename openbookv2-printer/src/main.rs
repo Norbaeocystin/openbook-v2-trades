@@ -1,3 +1,6 @@
+use anchor_lang::__private::base64;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
+use clap::Parser;
 use futures::TryStreamExt;
 use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -6,9 +9,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
-use anchor_lang::__private::base64;
-use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
-use clap::Parser;
 // use crossbeam_channel::{Receiver, Sender, unbounded};
 use crate::constants::OPENBOOK_V2;
 use crate::logs::{FillLog, Trade};
@@ -35,9 +35,10 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, unbounded_channel};
 use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest, SubscribeRequestFilterTransactions,
-    SubscribeRequestFilterAccountsFilterMemcmp, SubscribeUpdate, SubscribeUpdateAccount,
+    SubscribeRequest, SubscribeRequestFilterAccountsFilterMemcmp,
+    SubscribeRequestFilterTransactions, SubscribeUpdate, SubscribeUpdateAccount,
 };
 use zmq;
 
@@ -106,7 +107,7 @@ async fn main() {
 
     let mut transactions = HashMap::new();
     for key in market_keys.iter() {
-        let tx_filter = SubscribeRequestFilterTransactions{
+        let tx_filter = SubscribeRequestFilterTransactions {
             vote: None,
             failed: None,
             signature: None,
@@ -116,7 +117,7 @@ async fn main() {
         };
         transactions.insert(key.to_string(), tx_filter);
     }
-    let request =  SubscribeRequest {
+    let request = SubscribeRequest {
         accounts: Default::default(),
         slots: Default::default(),
         transactions: transactions,
@@ -132,6 +133,21 @@ async fn main() {
         .subscribe_with_request(Some(request))
         .await
         .unwrap();
+    while let Some(message) = stream.next().await {
+        if let Ok(msg) = message {
+            let market = msg.filters.first().unwrap();
+            #[allow(clippy::single_match)]
+            match msg.update_oneof {
+                Some(UpdateOneof::Transaction(tx)) => {
+                    let tx = tx.transaction.unwrap();
+                    let logs = tx.meta.unwrap().log_messages;
+                    // TODO process logs
+                }
+                _ => {}
+            }
+            debug!("new message: {msg:?}")
+        }
+    }
     // let mut unsubscribes = vec![];
     // while let Some(response) = subscription.next().await {
     //     if let Some(error) = response.value.err.as_ref() {
@@ -153,5 +169,4 @@ async fn main() {
     let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
     let socket = ctx.socket(zmq::PUB).unwrap();
     socket.bind(&zero_url).unwrap();
-
 }
