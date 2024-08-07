@@ -35,6 +35,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, unbounded_channel};
 use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::CommitmentLevel;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::{
     SubscribeRequest, SubscribeRequestFilterAccountsFilterMemcmp,
@@ -63,6 +64,15 @@ struct Cli {
     host: String,
     #[arg(short, long, default_value = "http://127.0.0.1:10000")]
     grpc: String,
+    #[clap(value_enum, default_value = "finalized")]
+    commitment: Commitment,
+}
+
+#[derive(clap::ValueEnum, Clone)]
+enum Commitment {
+    Processed,
+    Confirmed,
+    Finalized,
 }
 
 // CFSMrBssNG8Ud1edW59jNLnq2cwrQ9uY5cM3wXmqRJj3 DBSZ24hqXS5o8djunrTzBsJUb1P8ZvBs1nng5rmZKsJt 5h4DTiBqZctQWq7xc3H2t8qRdGcFNQNk1DstVNnbJvXs
@@ -117,6 +127,17 @@ async fn main() {
         };
         transactions.insert(key.to_string(), tx_filter);
     }
+    let commitment = match cli.commitment {
+        Commitment::Processed => {
+            CommitmentLevel::Processed
+        }
+        Commitment::Confirmed => {
+            CommitmentLevel::Confirmed
+        }
+        Commitment::Finalized => {
+            CommitmentLevel::Finalized
+        }
+    };
     let request = SubscribeRequest {
         accounts: Default::default(),
         slots: Default::default(),
@@ -124,7 +145,7 @@ async fn main() {
         blocks: Default::default(),
         blocks_meta: Default::default(),
         entry: Default::default(),
-        commitment: None,
+        commitment: Some(i32::from(commitment)),
         accounts_data_slice: vec![],
         ping: None,
         transactions_status: Default::default(),
@@ -135,6 +156,7 @@ async fn main() {
         .unwrap();
     while let Some(message) = stream.next().await {
         if let Ok(msg) = message {
+            debug!("new message: {msg:?}");
             let market = msg.filters.first().unwrap();
             #[allow(clippy::single_match)]
             match msg.update_oneof {
@@ -145,7 +167,6 @@ async fn main() {
                 }
                 _ => {}
             }
-            debug!("new message: {msg:?}")
         }
     }
     // let mut unsubscribes = vec![];
