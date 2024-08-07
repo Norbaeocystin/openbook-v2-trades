@@ -13,6 +13,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::hash::Hash;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::signature::Signature;
 use tokio::spawn;
 use tokio::sync::mpsc::{unbounded_channel};
 use yellowstone_grpc_client::GeyserGrpcClient;
@@ -146,6 +147,7 @@ async fn main() {
             match msg.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
                     let tx = tx.transaction.unwrap();
+                    Signature
                     let logs = tx.meta.unwrap().log_messages;
                     for log in logs.iter() {
                         if log.contains("Program data: ") {
@@ -153,7 +155,7 @@ async fn main() {
                             let data = base64::decode(data).unwrap();
                             if discriminator == data.as_slice()[..8] {
                                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                                tx_sender.send((fill_log, Hash::new(&tx.signature).to_string())).unwrap();
+                                tx_sender.send((fill_log, Signature::new(&tx.signature).to_string())).unwrap();
                             }
                         }
                     }
