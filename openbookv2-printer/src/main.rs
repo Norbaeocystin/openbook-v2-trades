@@ -157,9 +157,10 @@ async fn main() {
                             let data = log.replace("Program data: ", "");
                             let data = base64::decode(data).unwrap();
                             if discriminator == data.as_slice()[..8] {
-                                info!("tx: {}", tx.signature);
+                                let signature = Signature::new(&tx.signature).to_string();
+                                info!("tx: {}", signature);
                                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                                tx_sender.send((fill_log, Signature::new(&tx.signature).to_string())).unwrap();
+                                tx_sender.send((fill_log, signature)).unwrap();
                             }
                         }
                     }
