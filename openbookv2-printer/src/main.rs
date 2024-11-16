@@ -49,6 +49,8 @@ struct Cli {
     commitment: Commitment,
     #[arg(short, long, action)]
     connect: bool,
+    #[arg(short, long, default_value = "x-token")]
+    x_token: String,
 }
 
 #[derive(clap::ValueEnum, Clone)]
@@ -89,6 +91,8 @@ async fn main() {
     }
 
     let mut grpc_client = GeyserGrpcClient::build_from_shared(cli.grpc)
+        .unwrap()
+        .x_token(Some(cli.x_token.clone()))
         .unwrap()
         .connect()
         .await
