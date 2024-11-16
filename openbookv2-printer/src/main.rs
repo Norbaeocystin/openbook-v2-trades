@@ -104,7 +104,7 @@ async fn main() {
     for key in market_keys.iter() {
         let tx_filter = SubscribeRequestFilterTransactions {
             vote: None,
-            failed: None,
+            failed: Some(false),
             signature: None,
             account_include: vec![],
             account_exclude: vec![],
