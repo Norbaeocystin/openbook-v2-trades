@@ -1,9 +1,9 @@
 use anchor_lang::Discriminator;
+use log::warn;
 use openbookv2_generated::{Market, OpenOrdersAccount};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey;
 use std::collections::BTreeMap;
-use log::warn;
 
 pub fn to_native(value: f64, decimals: f64) -> f64 {
     let d = 10_f64.powf(decimals);
@@ -44,7 +44,7 @@ pub async fn get_owner_account_for_ooa(
             }
         }
     } else {
-            return Some(*ooa2owner.get(key).unwrap());
-        }
+        return Some(*ooa2owner.get(key).unwrap());
+    }
     None
 }

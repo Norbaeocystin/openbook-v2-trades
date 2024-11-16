@@ -1,11 +1,9 @@
-use anchor_lang::__private::base64;
-use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
-use clap::Parser;
-use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
 use crate::logs::{FillLog, Trade};
 use crate::name::parse_name;
 use crate::utils::{get_owner_account_for_ooa, price_lots_to_ui, to_native, to_ui_decimals};
+use anchor_lang::__private::base64;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
+use clap::Parser;
 use futures::StreamExt;
 use log::{debug, error, info, warn, LevelFilter};
 use openbookv2_generated::state::Market;
@@ -14,15 +12,14 @@ use solana_program::hash::Hash;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Signature;
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use tokio::spawn;
-use tokio::sync::mpsc::{unbounded_channel};
+use tokio::sync::mpsc::unbounded_channel;
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::CommitmentLevel;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest,
-    SubscribeRequestFilterTransactions,
-};
+use yellowstone_grpc_proto::geyser::CommitmentLevel;
+use yellowstone_grpc_proto::prelude::{SubscribeRequest, SubscribeRequestFilterTransactions};
 
 pub mod constants;
 mod logs;
@@ -113,15 +110,9 @@ async fn main() {
         transactions.insert(key.to_string(), tx_filter);
     }
     let commitment = match cli.commitment {
-        Commitment::Processed => {
-            CommitmentLevel::Processed
-        }
-        Commitment::Confirmed => {
-            CommitmentLevel::Confirmed
-        }
-        Commitment::Finalized => {
-            CommitmentLevel::Finalized
-        }
+        Commitment::Processed => CommitmentLevel::Processed,
+        Commitment::Confirmed => CommitmentLevel::Confirmed,
+        Commitment::Finalized => CommitmentLevel::Finalized,
     };
     let request = SubscribeRequest {
         accounts: Default::default(),
@@ -142,39 +133,42 @@ async fn main() {
 
     let (tx_sender, mut tx_receiver) = unbounded_channel::<(FillLog, String)>();
     let discriminator = FillLog::discriminator();
-    spawn(
-    async move {
-    while let Some(message) = stream.next().await {
-        if let Ok(msg) = message {
-            debug!("new message: {msg:?}");
-            #[allow(clippy::single_match)]
-            match msg.update_oneof {
-                Some(UpdateOneof::Transaction(tx)) => {
-                    let tx = tx.transaction.unwrap();
-                    let logs = tx.meta.unwrap().log_messages;
-                    let mut last_ix = "";
-                    for log in logs.iter() {
-                        if log.contains("Program log: Instruction:") {
-                            last_ix = log;
-                        }
-                        if log.contains("Program data: ") {
-                            let data = log.replace("Program data: ", "");
-                            let data = base64::decode(data).unwrap();
-                            if discriminator == data.as_slice()[..8] {
-                                let signature = Signature::new(&tx.signature).to_string();
-                                info!("tx: {} {}", signature, last_ix.replace("Program log: Instruction: ", ""));
-                                // TODO fill_log.
-                                let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
-                                tx_sender.send((fill_log, signature)).unwrap();
+    spawn(async move {
+        while let Some(message) = stream.next().await {
+            if let Ok(msg) = message {
+                debug!("new message: {msg:?}");
+                #[allow(clippy::single_match)]
+                match msg.update_oneof {
+                    Some(UpdateOneof::Transaction(tx)) => {
+                        let tx = tx.transaction.unwrap();
+                        let logs = tx.meta.unwrap().log_messages;
+                        let mut last_ix = "";
+                        for log in logs.iter() {
+                            if log.contains("Program log: Instruction:") {
+                                last_ix = log;
+                            }
+                            if log.contains("Program data: ") {
+                                let data = log.replace("Program data: ", "");
+                                let data = base64::decode(data).unwrap();
+                                if discriminator == data.as_slice()[..8] {
+                                    let signature = Signature::new(&tx.signature).to_string();
+                                    info!(
+                                        "tx: {} {}",
+                                        signature,
+                                        last_ix.replace("Program log: Instruction: ", "")
+                                    );
+                                    // TODO fill_log.
+                                    let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
+                                    tx_sender.send((fill_log, signature)).unwrap();
+                                }
                             }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
-    }
-        });
+    });
 
     let ctx = zmq::Context::new();
     let zero_url = format!("tcp://{}:{}", cli.host, cli.port);
