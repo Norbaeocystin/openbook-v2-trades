@@ -152,13 +152,17 @@ async fn main() {
                 Some(UpdateOneof::Transaction(tx)) => {
                     let tx = tx.transaction.unwrap();
                     let logs = tx.meta.unwrap().log_messages;
+                    let mut last_ix = "";
                     for log in logs.iter() {
+                        if log.contains("Program log: Instruction:") {
+                            last_ix = log;
+                        }
                         if log.contains("Program data: ") {
                             let data = log.replace("Program data: ", "");
                             let data = base64::decode(data).unwrap();
                             if discriminator == data.as_slice()[..8] {
                                 let signature = Signature::new(&tx.signature).to_string();
-                                info!("tx: {}", signature);
+                                info!("tx: {} {}", signature, last_ix.replace("Program log: Instruction: ", ""));
                                 // TODO fill_log.
                                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
                                 tx_sender.send((fill_log, signature)).unwrap();
