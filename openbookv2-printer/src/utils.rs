@@ -3,6 +3,7 @@ use openbookv2_generated::{Market, OpenOrdersAccount};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey;
 use std::collections::BTreeMap;
+use log::warn;
 
 pub fn to_native(value: f64, decimals: f64) -> f64 {
     let d = 10_f64.powf(decimals);
@@ -27,18 +28,23 @@ pub async fn get_owner_account_for_ooa(
     key: &Pubkey,
 ) -> Option<Pubkey> {
     if !ooa2owner.contains_key(key) {
-        let mut data = client.get_account_data(key).await.unwrap();
-        if data.len() > 8 {
-            if data[0..8] == OpenOrdersAccount::discriminator() {
-                let pubkey_data: [u8; 32] =
-                    data.drain(8..40).collect::<Vec<u8>>().try_into().unwrap();
-                return Some(Pubkey::from(pubkey_data));
-            } else {
-                return None;
+        let mut raw_data = client.get_account_data(key).await;
+        match raw_data {
+            Ok(mut data) => {
+                if data.len() > 8 && data[0..8] == OpenOrdersAccount::discriminator() {
+                    let pubkey_data: [u8; 32] =
+                        data.drain(8..40).collect::<Vec<u8>>().try_into().unwrap();
+                    return Some(Pubkey::from(pubkey_data));
+                } else {
+                    return None;
+                }
+            }
+            Err(error) => {
+                warn!("got error {} for key: {}", error, key);
             }
         }
     } else {
-        return Some(*ooa2owner.get(key).unwrap());
-    }
+            return Some(*ooa2owner.get(key).unwrap());
+        }
     None
 }
