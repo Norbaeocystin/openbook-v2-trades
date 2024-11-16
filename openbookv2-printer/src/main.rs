@@ -159,6 +159,7 @@ async fn main() {
                             if discriminator == data.as_slice()[..8] {
                                 let signature = Signature::new(&tx.signature).to_string();
                                 info!("tx: {}", signature);
+                                // TODO fill_log.
                                 let fill_log = FillLog::deserialize(&mut &data[8..]).unwrap();
                                 tx_sender.send((fill_log, signature)).unwrap();
                             }
@@ -211,7 +212,7 @@ async fn main() {
             }
             info!("{:?}, signature: {}", t, tx_hash);
         } else {
-            warn!("tx: {} contains log, which can't be parsed", tx_hash);
+            warn!("tx: {} contains log, which can't be parsed, because does not contain specified market", tx_hash);
         }
     }
 }
