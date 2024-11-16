@@ -27,15 +27,18 @@ pub async fn get_owner_account_for_ooa(
     key: &Pubkey,
 ) -> Option<Pubkey> {
     if !ooa2owner.contains_key(key) {
-        let mut data = client.get_account_data(key).await.unwrap();
-        if data.len() > 8 {
-            if data[0..8] == OpenOrdersAccount::discriminator() {
-                let pubkey_data: [u8; 32] =
-                    data.drain(8..40).collect::<Vec<u8>>().try_into().unwrap();
-                return Some(Pubkey::from(pubkey_data));
-            } else {
-                return None;
+        let mut raw_data = client.get_account_data(key).await;
+        match raw_data {
+            Ok(mut data) => {
+                if data.len() > 8 && data[0..8] == OpenOrdersAccount::discriminator() {
+                    let pubkey_data: [u8; 32] =
+                        data.drain(8..40).collect::<Vec<u8>>().try_into().unwrap();
+                    return Some(Pubkey::from(pubkey_data));
+                } else {
+                    return None;
+                }
             }
+            Err(_) => {}
         }
     } else {
         return Some(*ooa2owner.get(key).unwrap());
