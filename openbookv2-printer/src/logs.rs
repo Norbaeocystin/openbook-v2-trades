@@ -1,11 +1,11 @@
-use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator, event};
+use crate::utils::{price_lots_to_ui, to_ui_decimals};
 use anchor_lang::prelude::borsh;
-use solana_program::pubkey::Pubkey;
+use anchor_lang::{event, AnchorDeserialize, AnchorSerialize, Discriminator};
 use openbookv2_generated::{FillEvent, Market};
 use serde::{Deserialize, Serialize};
-use crate::utils::{price_lots_to_ui, to_ui_decimals};
+use solana_program::pubkey::Pubkey;
 
-#[derive(Serialize, Deserialize,Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub time_stamp: u64,
@@ -15,15 +15,18 @@ pub struct Trade {
     pub quantity_double: f64,
     pub market_id: String,
     pub taker_side: u8,
-    pub market_name: String
+    pub market_name: String,
 }
 
 impl Trade {
     pub fn new(fill_log: &FillLog, market: &Market, market_name: String) -> Trade {
-        let price_hr = price_lots_to_ui(fill_log.price, &market);
+        let price_hr = price_lots_to_ui(fill_log.price, market);
         // this is correct
-        let quantity = to_ui_decimals(fill_log.quantity as f64 * market.base_lot_size as f64, market.base_decimals as f64);
-        return Trade{
+        let quantity = to_ui_decimals(
+            fill_log.quantity as f64 * market.base_lot_size as f64,
+            market.base_decimals as f64,
+        );
+        Trade {
             time_stamp: fill_log.timestamp,
             maker_owner: fill_log.maker.to_string(),
             taker_owner: fill_log.taker.to_string(),
@@ -31,7 +34,7 @@ impl Trade {
             quantity_double: quantity,
             market_id: fill_log.market.to_string(),
             taker_side: fill_log.taker_side,
-            market_name: market_name,
+            market_name,
         }
     }
 }
